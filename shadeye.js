@@ -1,34 +1,51 @@
 $(function(){
 
 var shade_height = 2000;
+var light_distance = 0;
 
 var bars = [
-	[ $('.point1'), $('.point2'), $('.point3'), $('.point4') ]
+	{ points: [ $('.point1'), $('.point2'), $('.point3'), $('.point4') ],
+		radius: 0 },
+	{ points: [ $('.penta-point1'), $('.penta-point2'), $('.penta-point3') ],
+		radius: 20
+	},
+	{   points: [ $('.point-circle') ],
+		radius: 40
+	}
 ]
-var max = 0;
+var max_width = 0;
 function sqr(x) { return x*x }
 function sqrt(x) { return Math.sqrt(x) }
+function min(x,y) { return x<y?x:y }
+function max(x,y) { return x>y?x:y }
 var shades = [];
+
 function init() {
 	shades = [];
 	for (var i=0; i<bars.length; i++) {
-		var o = [ bars[i][0].offset(), bars[i][1].offset() ]
 		shades[i] = {
 			points : [],
-			$shade: $('.shade').hide() // replace by constructor
+			$shade: build_shade() // replace by constructor
 		}
+		shades[i].radius = bars[i].radius;
+		shades[i].repos = repos;	
+		shades[i].draw  = draw;	
+	}
+	max_width = $(window).width();
+	reoffset();
+}
+function reoffset() {
+	for (var i=0; i<bars.length; i++) {
+		shades[i].points = [];
 		var mid = [0,0];
-		for (var j=0; j< bars[i].length; j++) {
-			var o = bars[i][j].offset()
+		for (var j=0; j< bars[i].points.length; j++) {
+			var o = bars[i].points[j].offset()
 			shades[i].points[j] = { x: o.left, y: o.top }
 			mid[0] += o.left;
 			mid[1] += o.top;
 		}
-		shades[i].mid = { x: mid[0]/4, y: mid[0]/4 };
-		shades[i].repos = repos;	
-		shades[i].draw  = draw;	
+		shades[i].mid = { x: mid[0]/bars[i].points.length, y: mid[1]/bars[i].points.length };
 	}
-	max = $(window).width();
 }
 
 init();
@@ -58,6 +75,15 @@ function repos(x, y) {
 			x: x-this.points[i].x,
 			y: y-this.points[i].y
 		};
+	var max_angle_dist = 0;
+	for (var i=0; i<this.points.length; i++)
+		for (var j=i+1; j<this.points.length; j++) {
+			var dist = vector_len( {x:this.points[i].x-this.points[j].x, y:this.points[i].y-this.points[j].y} );
+			if (dist > max_angle_dist)
+				max_angle_dist = dist;
+		}
+	light_distance = max_angle_dist;
+
 	var angles = [];
 	for (var i=0; i<vectors.length; i++)
 		for (var j=i+1; j<vectors.length; j++) {
@@ -81,23 +107,39 @@ function repos(x, y) {
 		if (max_angle.absangle < angles[i].absangle)
 			max_angle = angles[i];
 	}
-	if (max_angle.angle < 0)
-	 	this.draw(x, y, this.points[ max_angle.from ], this.points[ max_angle.to ] )
+	if (this.points.length == 1)
+	 	this.draw(x, y, this.points[0], this.points[0] )
 	else
-	 	this.draw(x, y, this.points[ max_angle.to ], this.points[ max_angle.from ] )
+		if (max_angle.angle < 0)
+		 	this.draw(x, y, this.points[ max_angle.from ], this.points[ max_angle.to ] )
+		else
+		 	this.draw(x, y, this.points[ max_angle.to ], this.points[ max_angle.from ] )
 }
 
 function draw(x, y, from, to) {
-	var d= { x: from.x-to.x, y: from.y-to.y };
-	var len = vector_len(d);
 	var mid = { 
 		x: (from.x+to.x)/2, 
 		y: (from.y+to.y)/2
 	}
 	var delta = { x: x-mid.x, y: y-mid.y };
+	var d= { x: from.x-to.x, y: from.y-to.y };
+	var len = vector_len(d);
+	var len_delta = vector_len(delta);
+	var radius = this.radius;
+
+	if (len == 0) {
+		var ndelta = { x:delta.x/len_delta, y:delta.y/len_delta };
+		var tdelta = { x:ndelta.y, y:-ndelta.x };
+		from = { x: from.x - tdelta.x*this.radius, y: from.y - tdelta.y*this.radius }
+		to   = { x: to.x   + tdelta.x*this.radius, y: to.y   + tdelta.y*this.radius }
+		d= { x: from.x-to.x, y: from.y-to.y };
+		len = vector_len(d);
+		radius = 0;
+	}
+
 	var a1 = Math.atan2(d.y, d.x);
 	var a2 = Math.atan2(delta.x, delta.y);
-	var a3 = vector_angle(d, delta);
+	var a3;
 	a3 = vector_angle(d, {x: x-to.x, y: y-to.y});
 
 	if (a3 < Math.PI) a3+= 2*Math.PI;
@@ -105,18 +147,19 @@ function draw(x, y, from, to) {
 	a3 = a3 - Math.PI/2;
 	var t1 = 'rotate('+a1+'rad)';
 	var t2 = ' skew('+a3+'rad, 0)';
+
 	this.$shade.css({ 
 		left: to.x,
 		top: to.y,
 		'-webkit-transform': t1+t2
 	}).show();
-	var shade_color = 'rgba(0,0,0,' + vector_len(delta)/max/3 +")";
+	var light_dist = vector_len({ x: x-this.mid.x, y: y-this.mid.y});
+	var shade_color = 'rgba(0,0,0,' + max(light_dist-light_distance/2, 0)/max_width/3 +")";
 	this.$shade.find('.shade-shade').css({
 		background: shade_color
 	})
 
 	// бортики
-	var len_delta = vector_len(delta);
 	var len_to = vector_len({x: x-to.x, y: y-to.y});
 	var skew_angle = Math.abs(a3);
 	if (skew_angle > Math.PI) skew_angle = 2*Math.PI - skew_angle;
@@ -124,17 +167,23 @@ function draw(x, y, from, to) {
 	var total_size = len * ( skew_size + len_to) / len_to;
 
 	this.$shade.find('.shade-left').css({
-		width: len,
+		width: len + radius*2,
 		'border-right': (total_size-len)+'px solid transparent',
 		//'border-left': border_to+'px solid transparent',
 		'border-bottom': shade_height+'px solid '+shade_color,
-		'margin-left': 0
+		'margin-left': -radius
 	})
+}
+
+function build_shade() {
+	var $shade = $('<div class="shade"><div class="shade-left"></div></div>');
+	$shade.hide().appendTo($(".shade-box"));
+	return $shade;
 }
 
 
 function all(event) {
-	init();
+	reoffset();
 	for (var i=0; i<shades.length; i++)
 		shades[i].repos(event.pageX, event.pageY)	
 }
@@ -145,10 +194,6 @@ $(window).mousemove(all)
 
 /* TODO
 
-* автоматически генерировать тени
-* работать с тремя точками
-* работать с кругами вокруг точек
-* работать с одним кругом
 * распознавание квадрата из jquery-блока
 
 */
